@@ -110,3 +110,5 @@ nbproject
 /testnet
 
 __pycache__/
+external/miniupnp
+external/randomx
