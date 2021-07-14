@@ -227,17 +227,6 @@ static rct::keyV vector_scalar(const rct::keyV &a, const rct::key &x)
   return vector_scalar(epee::span<const rct::key>(a.data(), a.size()), x);
 }
 
-/* Multiply a scalar and a vector */
-static rct::keyV vector_scalar(const std::vector<rct::xmr_amount> &a, const rct::key &x)
-{
-  rct::keyV res(a.size());
-  for (size_t i = 0; i < a.size(); ++i)
-  {
-    sc_mul(res[i].bytes, rct::d2h(a[i]).bytes, x.bytes);
-  }
-  return res;
-}
-
 /* Create a vector from copies of a single value */
 static rct::keyV vector_dup(const rct::key &x, size_t N)
 {
@@ -560,16 +549,17 @@ MoneroExchange::MoneroExchange(size_t anonSetSize, size_t ownkeysSetSize)
 MProvePlus MoneroExchange::GenerateProofOfAssets()
 {
     // Computing beta
-  size_t beta = 0;
-  for(beta=0;(1ul<<beta)<a_res;beta++);
+  size_t beta_tmp = 0;
+  for(beta_tmp=0;(1ul<<beta_tmp)<a_res;beta_tmp++);
   
   //Calculating various sizes
   size_t sn = s*n;
-  size_t m = 2+3*s+beta+n+sn;
+  size_t m = 2+3*s+beta_tmp+n+sn;
   size_t logm;
   for(logm=0; m>(1ul<<logm); logm++);
-  beta = beta + (1ul<<logm) - m;
+  size_t beta = beta_tmp + (1ul<<logm) - m;
   m = (1ul<<logm);
+  std::cout<<"expected size = "<<m<<std::endl;
   init_exponents(1ul<<logm);
   
   // u,v
@@ -590,7 +580,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   // Computing b
   rct::keyV b_vec(beta);
   rct::keyV b_vec_comp(beta);
-  for (size_t i = beta; i-- > 0;)
+  for (size_t i = beta_tmp; i-- > 0;)
   {
     if (a_res & (((uint64_t)1)<<i)) {
       b_vec[i] = rct::identity();
@@ -608,6 +598,8 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
       test_a += ((uint64_t)1)<<i;
     }
   }
+
+  std::cout<<beta<<' '<<test_a<<' '<<a_res<<std::endl;
   CHECK_AND_ASSERT_THROW_MES(test_a == a_res, "test_aL failed");
   std::cout<<"Creating b successful"<<std::endl;
 
@@ -615,7 +607,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
   std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
   std::vector<ge_p3> H_p3(Hi_p3.begin(), Hi_p3.end());
-  std::cout<<"expected size = "<<m<<std::endl;
   std::cout<<"Creating bases successful"<<std::endl;
 
   // Computing C_res, ehat, vec(E), I_vec
@@ -641,14 +632,16 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   
   // computing xi
   rct::keyV a_vec_key(a_vec.size());
-  for(size_t i=0; i<a_vec.size();i++) a_vec_key[i] = d2h(a_vec[i]);
+  for(size_t i=0; i<a_vec.size();i++) a_vec_key[i] = rct::d2h(a_vec[i]);
+  std::cout<<"Creating a_vec_key successful"<<std::endl;
+
   rct::key xi = inner_product(vS, a_vec_key);
   sc_mul(xi.bytes, xi.bytes, minus_u.bytes);
   std::cout<<"Creating xi successful"<<std::endl;
   
   //computing eta
   rct::key eta;
-  sc_mul(eta.bytes, inner_product(vS, r_vec).bytes, minus_u);
+  sc_mul(eta.bytes, inner_product(vS, r_vec).bytes, minus_u.bytes);
   sc_sub(eta.bytes, eta.bytes, inner_product(vS, x_vec).bytes);
   std::cout<<"Creating eta successful"<<std::endl;
   
@@ -666,7 +659,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::copy(x_inv.begin(), x_inv.end(), std::back_inserter(cL));
   std::copy(E_mat.begin(), E_mat.end(), std::back_inserter(cL));
   std::copy(b_vec.begin(), b_vec.end(), std::back_inserter(cL));
-  for(auto &i: a_vec_key) cL.push_back(i);
+  for(auto i: a_vec_key) cL.push_back(i);
   std::copy(r_vec.begin(), r_vec.end(), std::back_inserter(cL));
   std::cout<<"Creating cL successful "<<cL.size()<<std::endl;
 
@@ -923,8 +916,8 @@ void MoneroExchange::PrintExchangeState()
     {
       std::cout << "Address at index " << i+1 << " is exchange owned" << std::endl;
       std::cout << "Address is " << index << " out of " << s << std::endl;
-      std::cout << "Key Image is " << m_proof.I_vec[i] << std::endl;
-      std::cout << "Amount in address is " << a_vec[i] << std::endl;
+      // std::cout << "Key Image is " << m_proof.I_vec[index-1] << std::endl;
+      std::cout << "Amount in address is " << a_vec[index-1] << std::endl;
       std::cout << std::endl;
       index += 1;
     }
