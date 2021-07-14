@@ -83,6 +83,7 @@ file(COPY
 if (CMAKE_BUILD_TYPE STREQUAL "fuzz" OR OSSFUZZ)
   add_subdirectory(fuzz)
 else ()
+  add_subdirectory(mprove)
   add_subdirectory(core_tests)
   add_subdirectory(fuzz)
   add_subdirectory(crypto)
