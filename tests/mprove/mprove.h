@@ -1026,7 +1026,7 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
     sc_mul(tmp2.bytes, vS[i].bytes, minus_usq.bytes);
     sc_mul(tmp2.bytes, rct::EIGHT.bytes, tmp2.bytes);
     ge_p3_to_cached(&Q_cache, &Q_p3[2+n+i]);
-    rct::addKeys3(tmp, tmp2, I_vec[i], rct::identity(), &Q_cache);
+    rct::addKeys3(tmp, tmp2, proof.I_vec[i], rct::identity(), &Q_cache);
     CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&Gw_p3[2+n+i], tmp.bytes) == 0, "ge_frombytes_vartime failed at Ihat");
   }
   std::copy(G_prime_p3.begin(), G_prime_p3.end(), std::back_inserter(Gw_p3));
@@ -1068,11 +1068,11 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   ge_p3 proof8_L, proof8_R;
   for (size_t i = 0; i < length; ++i)
   {
-    rct::scalarmult8(proof8_L, proof.L[i])
+    rct::scalarmult8(proof8_L, proof.L[i]);
     sc_mul(tmp.bytes, w[i].bytes, w[i].bytes);
     multiexp_data.emplace_back(tmp, proof8_L);
 
-    rct::scalarmult8(proof8_R, proof.R[i])
+    rct::scalarmult8(proof8_R, proof.R[i]);
     sc_mul(tmp.bytes, winv[i].bytes, winv[i].bytes);
     multiexp_data.emplace_back(tmp, proof8_R);
   }
