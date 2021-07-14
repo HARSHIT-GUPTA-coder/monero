@@ -65,8 +65,8 @@ static void init_exponents(size_t ProofSize)
 {
   boost::lock_guard<boost::mutex> lock(init_mutex);
 
-  static bool init_done = false;
-  if (init_done)
+  static uint64_t init_done = 0;
+  if (init_done > ProofSize)
     return;
   std::vector<rct::MultiexpData> data;
   data.reserve(2*ProofSize + 1);
@@ -75,7 +75,7 @@ static void init_exponents(size_t ProofSize)
   Hi_p3.resize(ProofSize);
   Gi_p3.resize(ProofSize);
   size_t i;
-  for ( i = 0; i < ProofSize; ++i)
+  for ( i = init_done; i < ProofSize; ++i)
   {
     Hi[i] = get_exponent(rct::H, i * 2);
     CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&Hi_p3[i], Hi[i].bytes) == 0, "ge_frombytes_vartime failed");
@@ -87,13 +87,15 @@ static void init_exponents(size_t ProofSize)
 
   }
 
-  F = get_exponent(rct::H, i*2);
-  CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&F_p3, F.bytes) == 0, "ge_frombytes_vartime failed");
-
+  if(init_done==0) {
+    F = get_exponent(rct::H, i*2);
+    CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&F_p3, F.bytes) == 0, "ge_frombytes_vartime failed");
+  }
   data.push_back({rct::zero(), F});
-  straus_HiGi_cache = rct::straus_init_cache(data, 0);
+  if(data.size() < STRAUS_SIZE_LIMIT)
+    straus_HiGi_cache = rct::straus_init_cache(data, 0);
   pippenger_HiGi_cache = rct::pippenger_init_cache(data, 0, PIPPENGER_SIZE_LIMIT);
-  init_done = true;
+  init_done = ProofSize;
 }
 
 /* Compute a custom vector-scalar commitment */
@@ -386,10 +388,14 @@ struct constraints {
   rct::key delta;
   rct::key kappa;
 
-  constraints(size_t s, size_t n, size_t beta, rct::key y, rct::key z, rct::key u, rct::key v) {
+  constraints(size_t s, size_t n, rct::key y, rct::key z, rct::key u, rct::key v) {
+    size_t beta = 64;
     size_t sn  = s*n;
     size_t m = 2+3*s+beta+n+sn;
-    size_t points[] = {1,2,2+n,2+n+s,2+n+s+sn, 2+n+s+sn+beta, m-s, m};
+    size_t logm;
+    for(logm=0;(1ul<<logm)<m;logm++);
+    m = (1ul<<logm);
+    size_t points[] = {1,2,2+n,2+n+s,2+n+s+sn, 2+n+s+sn+beta, 2+n+2*s+sn+beta, 2+n+3*s+sn+beta};
 
     rct::key tmp;
     auto yN = vector_powers(y, sn+beta);
@@ -549,15 +555,13 @@ MoneroExchange::MoneroExchange(size_t anonSetSize, size_t ownkeysSetSize)
 MProvePlus MoneroExchange::GenerateProofOfAssets()
 {
     // Computing beta
-  size_t beta_tmp = 0;
-  for(beta_tmp=0;(1ul<<beta_tmp)<a_res;beta_tmp++);
   
   //Calculating various sizes
+  size_t beta = 64;
   size_t sn = s*n;
-  size_t m = 2+3*s+beta_tmp+n+sn;
+  size_t m = 2+3*s+beta+n+sn;
   size_t logm;
   for(logm=0; m>(1ul<<logm); logm++);
-  size_t beta = beta_tmp + (1ul<<logm) - m;
   m = (1ul<<logm);
   std::cout<<"expected size = "<<m<<std::endl;
   init_exponents(1ul<<logm);
@@ -580,7 +584,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   // Computing b
   rct::keyV b_vec(beta);
   rct::keyV b_vec_comp(beta);
-  for (size_t i = beta_tmp; i-- > 0;)
+  for (size_t i = beta; i-- > 0;)
   {
     if (a_res & (((uint64_t)1)<<i)) {
       b_vec[i] = rct::identity();
@@ -661,6 +665,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::copy(b_vec.begin(), b_vec.end(), std::back_inserter(cL));
   for(auto i: a_vec_key) cL.push_back(i);
   std::copy(r_vec.begin(), r_vec.end(), std::back_inserter(cL));
+  std::fill_n(std::back_inserter(cL),m-cL.size(),rct::zero());
   std::cout<<"Creating cL successful "<<cL.size()<<std::endl;
 
   //cR = [0^{2+n}, x, 1-E_mat, 1-b, 0^2s]
@@ -669,7 +674,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::copy(x_vec.begin(), x_vec.end(), std::back_inserter(cR));
   std::copy(E_mat_comp.begin(), E_mat_comp.end(), std::back_inserter(cR));
   std::copy(b_vec_comp.begin(), b_vec_comp.end(), std::back_inserter(cR));
-  std::fill_n(std::back_inserter(cR),2*s,rct::zero());
+  std::fill_n(std::back_inserter(cR),m-cR.size(),rct::zero());
   std::cout<<"Creating cR successful "<<cR.size()<<std::endl;
 
   //Computing G0
@@ -694,6 +699,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     sc_mul(usqw.bytes, usq.bytes, w_G.bytes);
     sc_mul(minus_usqw.bytes, w_G.bytes, minus_usq.bytes);
     std::vector<ge_p3> Gw_p3(2+n+s);
+    Gw_p3.reserve(m);
     rct::geDsmp C_ge, P_ge, H_ge;
     rct::key tmp, tmp2;
     ge_p3 p2;
@@ -753,7 +759,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     if(y==rct::zero() || z==rct::zero()) goto try_again;
     
     // Constraints
-    constraints constraint_vec(s, n, beta, y, z, u, v);
+    constraints constraint_vec(s, n, y, z, u, v);
     std::cout<<"Creating constraints successful"<<std::endl;
     
     //Constructing the polynomial l,r,t
@@ -934,8 +940,8 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   
   size_t n = C_vec.size(), s = proof.I_vec.size();
   size_t sn = s*n;
-  size_t beta = m - (2+3*s+n+sn);
-  
+  size_t beta = 64;
+  // m = 2+3*s+n+sn+beta;
   //Bases
   std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
   std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
@@ -984,7 +990,7 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   rct::keyV winv = invert(w);
   
   // //Getting constraints vector
-  constraints constraint_vec(s, n, beta, y, z, u, v);
+  constraints constraint_vec(s, n, y, z, u, v);
 
   // Computing Gw
   rct::key uw, usqw, minus_usqw;
@@ -992,6 +998,7 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   sc_mul(usqw.bytes, usq.bytes, w_G.bytes);
   sc_mul(minus_usqw.bytes, w_G.bytes, minus_usq.bytes);
   std::vector<ge_p3> Gw_p3(2+n+s);
+  Gw_p3.reserve(m);
   rct::geDsmp C_ge, P_ge, H_ge;
   rct::key tmp, tmp2;
   ge_p3 p2;
