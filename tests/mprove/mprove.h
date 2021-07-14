@@ -111,16 +111,16 @@ static rct::key cross_vector_exponent(size_t size, const std::vector<ge_p3> &A, 
   multiexp_data.resize(size*2 + (!!extra_point));
   for (size_t i = 0; i < size; ++i)
   {
-    multiexp_data[i*2].scalar = a[ao+i];
+    sc_mul(multiexp_data[i*2].scalar.bytes, a[ao+i].bytes, rct::INV_EIGHT.bytes);
     multiexp_data[i*2].point = A[Ao+i];
-    multiexp_data[i*2+1].scalar = b[bo+i];
+    sc_mul(multiexp_data[i*2+1].scalar.bytes, b[bo+i].bytes, rct::INV_EIGHT.bytes);
     if (scale)
       sc_mul(multiexp_data[i*2+1].scalar.bytes, multiexp_data[i*2+1].scalar.bytes, (*scale)[Bo+i].bytes);
     multiexp_data[i*2+1].point = B[Bo+i];
   }
   if (extra_point)
   {
-    multiexp_data.back().scalar = *extra_scalar;
+    sc_mul(multiexp_data.back().scalar.bytes, extra_scalar->bytes, rct::INV_EIGHT.bytes);
     multiexp_data.back().point = *extra_point;
   }
   return multiexp(multiexp_data, 0);
@@ -554,8 +554,6 @@ MoneroExchange::MoneroExchange(size_t anonSetSize, size_t ownkeysSetSize)
 
 MProvePlus MoneroExchange::GenerateProofOfAssets()
 {
-    // Computing beta
-  
   //Calculating various sizes
   size_t beta = 64;
   size_t sn = s*n;
@@ -614,10 +612,13 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::cout<<"Creating bases successful"<<std::endl;
 
   // Computing C_res, ehat, vec(E), I_vec
+  rct::key tmp, tmp2;
   rct::keyV ehat(n);
   rct::keyV E_mat(sn), E_mat_comp(sn);
   rct::keyV I_vec(s);
-  rct::key C_res = rct::commit(a_res, gamma);
+  rct::key gamma8;
+  sc_mul(gamma8.bytes, gamma.bytes, rct::INV_EIGHT.bytes);
+  rct::key C_res = rct::commit(a_res, gamma8);
   // sc_mul(C_res.bytes, gamma.bytes, rct::G.bytes);
   //  = rct::scalarmultBase(gamma);
   size_t index=0;
@@ -627,7 +628,8 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
       ehat[i] = vS[index];
       // sc_mul(C_res.bytes, C_res.bytes, C_vec[i].bytes);
       // sc_add(gamma.bytes, gamma.bytes, r_vec[index].bytes);
-      I_vec[index] = rct::scalarmultKey(H_vec[i],  x_vec[index]);
+      sc_mul(tmp.bytes, x_vec[index].bytes, rct::INV_EIGHT.bytes);
+      I_vec[index] = rct::scalarmultKey(H_vec[i],  tmp);
       index = index+1;
     } 
     else E_mat_comp[n*index+i] = rct::identity();
@@ -635,8 +637,10 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::cout<<"Creating C_res, ehat, vec(E), I_vec successful"<<std::endl;
   
   // computing xi
-  rct::keyV a_vec_key(a_vec.size());
-  for(size_t i=0; i<a_vec.size();i++) a_vec_key[i] = rct::d2h(a_vec[i]);
+  rct::keyV a_vec_key;
+  a_vec_key.reserve(s);
+  std::cout<<"Creating a_vec_key successful"<<std::endl;
+  for(size_t i=0; i<s;i++) a_vec_key.push_back(rct::d2h(a_vec[i]));
   std::cout<<"Creating a_vec_key successful"<<std::endl;
 
   rct::key xi = inner_product(vS, a_vec_key);
@@ -701,7 +705,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     std::vector<ge_p3> Gw_p3(2+n+s);
     Gw_p3.reserve(m);
     rct::geDsmp C_ge, P_ge, H_ge;
-    rct::key tmp, tmp2;
     ge_p3 p2;
     ge_p1p1 p1;
     ge_double_scalarmult_base_vartime_p3(&Gw_p3[0], w_G.bytes, &Q_p3[0], rct::identity().bytes);
@@ -721,6 +724,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     // Computing Ihat
     for(size_t i=0; i<s; i++) {
       sc_mul(tmp2.bytes, vS[i].bytes, minus_usq.bytes);
+      sc_mul(tmp2.bytes, rct::EIGHT.bytes, tmp2.bytes);
       ge_p3_to_cached(&Q_cache, &Q_p3[2+n+i]);
       rct::addKeys3(tmp, tmp2, I_vec[i], rct::identity(), &Q_cache);
       CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&Gw_p3[2+n+i], tmp.bytes) == 0, "ge_frombytes_vartime failed at Ihat");
@@ -779,9 +783,13 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     rct::key tau1 = rct::skGen(), tau2 = rct::skGen();
     ge_p3 p3;
     rct::key T1, T2;
-    ge_double_scalarmult_base_vartime_p3(&p3, t1.bytes, &ge_p3_H, tau1.bytes);
+    sc_mul(tmp.bytes, t1.bytes, rct::INV_EIGHT.bytes);
+    sc_mul(tmp2.bytes, tau1.bytes, rct::INV_EIGHT.bytes);
+    ge_double_scalarmult_base_vartime_p3(&p3, tmp.bytes, &ge_p3_H, tmp2.bytes);
     ge_p3_tobytes(T1.bytes, &p3);
-    ge_double_scalarmult_base_vartime_p3(&p3, t2.bytes, &ge_p3_H, tau2.bytes);
+    sc_mul(tmp.bytes, t2.bytes, rct::INV_EIGHT.bytes);
+    sc_mul(tmp2.bytes, tau2.bytes, rct::INV_EIGHT.bytes);
+    ge_double_scalarmult_base_vartime_p3(&p3, tmp.bytes, &ge_p3_H, tmp2.bytes);
     ge_p3_tobytes(T2.bytes, &p3);
     std::cout<<"Creating T1,T2 successful"<<std::endl;
 
@@ -874,20 +882,19 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
       ++round;
     }
 
-    m_proof = MProvePlus(u, v, I_vec, C_res, A, S, T1, T2, taux, r, t_hat, L, R, aprime[0], bprime[0]);
+    m_proof = MProvePlus(u, v, std::move(I_vec), C_res, A, S, T1, T2, taux, r, t_hat, std::move(L), std::move(R), aprime[0], bprime[0]);
     return m_proof;
 }
 
 size_t MoneroExchange::ProofSize()
 {
-  size_t beta = 0;
-  for(beta=0;(1ul<<beta)<a_res;beta++);
+  size_t beta = 64;
   size_t logm, m = 2+3*s+beta+n+s*n;
   for(logm=0; (1ul<<logm)<m; logm++);
-  
+  m = 1ul<<logm;
   size_t psize = 0;
   psize += s*32; // m_proof.I_vec
-  psize += 32*10; // m_proof.c_res, m_proof.A,  m_proof.S,  m_proof.T1,  m_proof.T2,  m_proof.taux, m_proof.r,  m_proof.t_hat,  m_proof.a,  m_proof.b  
+  psize += 32*12; // m_proof.c_res, m_proof.A,  m_proof.S,  m_proof.T1,  m_proof.T2,  m_proof.taux, m_proof.r,  m_proof.t_hat,  m_proof.a,  m_proof.b  
   psize += 32*2*logm; // m_proof.L, mproof.R
 
   return psize;
@@ -939,8 +946,6 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   init_exponents(m);
   
   size_t n = C_vec.size(), s = proof.I_vec.size();
-  size_t sn = s*n;
-  size_t beta = 64;
   // m = 2+3*s+n+sn+beta;
   //Bases
   std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
@@ -1019,8 +1024,9 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   // Computing Ihat
   for(size_t i=0; i<s; i++) {
     sc_mul(tmp2.bytes, vS[i].bytes, minus_usq.bytes);
+    sc_mul(tmp2.bytes, rct::EIGHT.bytes, tmp2.bytes);
     ge_p3_to_cached(&Q_cache, &Q_p3[2+n+i]);
-    rct::addKeys3(tmp, tmp2, proof.I_vec[i], rct::identity(), &Q_cache);
+    rct::addKeys3(tmp, tmp2, I_vec[i], rct::identity(), &Q_cache);
     CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&Gw_p3[2+n+i], tmp.bytes) == 0, "ge_frombytes_vartime failed at Ihat");
   }
   std::copy(G_prime_p3.begin(), G_prime_p3.end(), std::back_inserter(Gw_p3));
@@ -1059,13 +1065,16 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   std::cout<<"Creating G_vec,H_vec successful"<<std::endl;
 
   // // Lj^{wj^2} Rj^{wj^-2}
-  
+  ge_p3 proof8_L, proof8_R;
   for (size_t i = 0; i < length; ++i)
   {
+    rct::scalarmult8(proof8_L, proof.L[i])
     sc_mul(tmp.bytes, w[i].bytes, w[i].bytes);
-    multiexp_data.emplace_back(tmp, proof.L[i]);
+    multiexp_data.emplace_back(tmp, proof8_L);
+
+    rct::scalarmult8(proof8_R, proof.R[i])
     sc_mul(tmp.bytes, winv[i].bytes, winv[i].bytes);
-    multiexp_data.emplace_back(tmp, proof.R[i]);
+    multiexp_data.emplace_back(tmp, proof8_R);
   }
   std::cout<<"Creating L,R successful"<<std::endl;
 
@@ -1084,7 +1093,18 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   std::cout<<"Creating F successful"<<std::endl;
 
   // // S^x
-  multiexp_data.emplace_back(x, proof.S);
+  ge_p3 proof8_T1;
+  ge_p3 proof8_T2;
+  ge_p3 proof8_S;
+  ge_p3 proof8_A;
+  ge_p3 proof8_Cres;
+  rct::scalarmult8(proof8_T1, proof.T1);
+  rct::scalarmult8(proof8_T2, proof.T2);
+  rct::scalarmult8(proof8_S, proof.S);
+  rct::scalarmult8(proof8_A, proof.A);
+  rct::scalarmult8(proof8_Cres, proof.C_res);
+
+  multiexp_data.emplace_back(x, proof8_S);
   std::cout<<"Creating S successful"<<std::endl;
 
   // // H^{c(delta-t_hat)}
@@ -1095,24 +1115,24 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
 
   // // T1^cx
   sc_mul(y2.bytes, x.bytes, weight.bytes);
-  multiexp_data.emplace_back(y2, proof.T1);
+  multiexp_data.emplace_back(y2, proof8_T1);
   std::cout<<"Creating T1 successful"<<std::endl;
   
   // // T2^{cx^2}
   rct::key xsq;
   sc_mul(xsq.bytes, x.bytes, x.bytes);
   sc_mul(xsq.bytes, xsq.bytes, weight.bytes);
-  multiexp_data.emplace_back(xsq, proof.T2);
+  multiexp_data.emplace_back(xsq, proof8_T2);
   std::cout<<"Creating T2 successful"<<std::endl;
 
   // C_res^{cz^2}
   rct::key zsq;
   sc_mul(zsq.bytes, z.bytes,z.bytes);
   sc_mul(y3.bytes, zsq.bytes, weight.bytes);
-  multiexp_data.emplace_back(y3, proof.C_res);
+  multiexp_data.emplace_back(y3, proof8_Cres);
   std::cout<<"Creating Cres successful"<<std::endl;
 
-  multiexp_data.emplace_back(rct::identity(), proof.A);
+  multiexp_data.emplace_back(rct::identity(), proof8_A);
 
   if(!(multiexp(multiexp_data, 0) == rct::identity() )) {
     MERROR("Verification failure");
