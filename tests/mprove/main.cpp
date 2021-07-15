@@ -16,13 +16,10 @@ int main(int argc, char *argv[]) {
   print = atoi(argv[3]);
 
   MoneroExchange exch(anonSetSize, ownKeysSetSize);
-  cout<<"exchange creation successful"<<endl;
   MProvePlus p = exch.GenerateProofOfAssets();
-  cout<<"proof generation successful"<<endl;
   MProveProofPublicVerification(p, exch.GetC_vec(), exch.GetP_vec(), exch.GetH_vec());
   // exch.PrivatelyVerifyProofOfAssets();
   cout << "Proof size = " << exch.ProofSize() << endl;
-  cout << "Proof size = " << sizeof(p) << endl;
 
   if(print)
   {

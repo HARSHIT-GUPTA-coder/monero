@@ -14,11 +14,6 @@
 #define STRAUS_SIZE_LIMIT 232
 #define PIPPENGER_SIZE_LIMIT 0
 
-std::ostream& operator <<(std::ostream& c,rct::key &v){
-  for(auto &i: v.bytes) c<<int(i)<<' ';
-	return c;
-}
-
 static constexpr size_t maxProofSize = 1e6;
 
 static rct::keyV Hi, Gi;
@@ -513,15 +508,10 @@ MoneroExchange::MoneroExchange(size_t anonSetSize, size_t ownkeysSetSize)
   // std::ranges::sample(std::views::iota(0, anonSetSize), idx, ownkeysSetSize, std::mt19937{std::random_device{}()});
   std::vector<size_t> idx(anonSetSize);
   std::iota(idx.begin(), idx.end(),0);
-  for(auto i: idx) std::cout<<i<<' ';
-  std::cout<<std::endl;
   // std::random_shuffle(idx.begin(),idx.end());
   std::shuffle(idx.begin(), idx.end(), std::mt19937{std::random_device{}()});
   idx.resize(ownkeysSetSize);
   std::sort(idx.begin(), idx.end());
-  std::cout<<"Indices: ";
-  for(auto i: idx) std::cout<<i<<' ';
-  std::cout<<std::endl;
   gamma = rct::skGen();
   
   a_res = 0;
@@ -560,7 +550,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   size_t logm;
   for(logm=0; m>(1ul<<logm); logm++);
   m = (1ul<<logm);
-  std::cout<<"expected size = "<<m<<std::endl;
   init_exponents(1ul<<logm);
 
   try_again:
@@ -574,17 +563,11 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     sc_mul(usq.bytes, u.bytes, u.bytes);
     sc_sub(minus_u.bytes, rct::zero().bytes, u.bytes);
     sc_sub(minus_usq.bytes, rct::zero().bytes, usq.bytes);
-
-    std::cout<<"Creating u,v successful"<<std::endl;
-    std::cout<<"u: "<<u<<std::endl;
-    std::cout<<"v: "<<v<<std::endl;
     
     //Bases
     std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
     std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
     std::vector<ge_p3> H_p3(Hi_p3.begin(), Hi_p3.end());
-    std::cout<<"Creating bases successful"<<std::endl;
-
 
     // Secret vectors
     //cL = [xi, eta, e_hat, x_inv, E_mat, b, a, r]
@@ -602,17 +585,15 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
         cL[2+n+s+sn+i] = rct::zero();
       }
     }
-
+    #ifdef DEBUG_MP
     uint64_t test_a = 0;
     for(size_t i=0; i<beta; i++) {
       if(cL[2+n+s+sn+i]==rct::identity()) {
         test_a += ((uint64_t)1)<<i;
       }
     }
-
-    std::cout<<beta<<' '<<test_a<<' '<<a_res<<std::endl;
     CHECK_AND_ASSERT_THROW_MES(test_a == a_res, "test_aL failed");
-    std::cout<<"Creating b successful"<<std::endl;
+    #endif
 
     // Computing C_res, ehat, vec(E), I_vec
     rct::key tmp, tmp2;
@@ -631,50 +612,39 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
       } 
       else cR[2+n+s+n*index+i] = rct::identity();
     }
-    std::cout<<"Creating C_res, ehat, vec(E), I_vec successful"<<std::endl;
     
     // computing xi
     for(size_t i=0; i<s;i++) cL[2+n+s+sn+beta+i] = rct::d2h(a_vec[i]);
-    std::cout<<"Creating a_vec_key successful"<<std::endl;
 
     for (size_t i = 0; i < s; ++i)
     {
       sc_muladd(cL[0].bytes, vS[i].bytes, cL[2+n+s+sn+beta+i].bytes, cL[0].bytes);
     }
     sc_mul(cL[0].bytes, cL[0].bytes, minus_u.bytes);
-    std::cout<<"Creating xi successful"<<std::endl;
     
     //computing eta
     sc_mul(cL[1].bytes, inner_product(vS, r_vec).bytes, minus_u.bytes);
     sc_sub(cL[1].bytes, cL[1].bytes, inner_product(vS, x_vec).bytes);
-    std::cout<<"Creating eta successful"<<std::endl;
     
     // computing inverse of x
     rct::keyV x_inv = invert(x_vec);
-    std::cout<<"Creating x_inv successful"<<std::endl;
 
     for(size_t i=0; i<s; i++) {
       cL[2+n+i] = x_inv[i];
       cR[2+n+i] = x_vec[i];
       cL[2+n+s+sn+beta+s+i] = r_vec[i];
     }
-    std::cout<<"Creating cL successful "<<cL.size()<<std::endl;
-    std::cout<<"Creating cR successful "<<cR.size()<<std::endl;
 
     //Computing G0
     std::vector<ge_p3> G0_p3(m);  std::copy_n(Gi_p3.begin(), m, G0_p3.begin());
-    std::cout<<"Creating G0 successful"<<std::endl;
   
     //Computing A
     rct::key rA = rct::skGen();
     rct::key A = cross_vector_exponent(m,G0_p3,0,H_p3,0,cL,0,cR,0,NULL,&F_p3,&rA);
-    std::cout<<"Creating A successful"<<std::endl;
 
     //Challenge w
     rct::key w_G = hashcache= hash_cache_mash(hashcache, A);
     if(w_G==rct::zero()) goto try_again;
-    std::cout<<"Creating wG successful"<<std::endl;
-    std::cout<<"wG: "<<w_G<<std::endl;
 
     // Computing Gw
     rct::key uw, usqw, minus_usqw;
@@ -699,7 +669,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
       ge_add(&p1, &p2, &Q_cache);
       ge_p1p1_to_p3(&Gw_p3[2+i], &p1);
     }
-    std::cout<<"Creating Yhat successful"<<std::endl;
     // Computing Ihat
     for(size_t i=0; i<s; i++) {
       sc_mul(tmp2.bytes, vS[i].bytes, minus_usq.bytes);
@@ -709,41 +678,34 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
       CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&Gw_p3[2+n+i], tmp.bytes) == 0, "ge_frombytes_vartime failed at Ihat");
     }
     std::copy(G_prime_p3.begin(), G_prime_p3.end(), std::back_inserter(Gw_p3));
-    std::cout<<"Creating Gw successful"<<std::endl;
 
     // Check if G_w^c_L = G_0^cL or G_w^cL G_0^{-cL} = 1
-    // #ifdef DEBUG_MP
+    #ifdef DEBUG_MP
       rct::keyV minus_cL = vector_subtract(vector_dup(rct::zero(),m),cL);
       rct::key test_G0 = cross_vector_exponent(0, Gw_p3, 0, G0_p3, 0, cL, 0, minus_cL, 0, NULL, NULL, NULL);
       CHECK_AND_ASSERT_THROW_MES(test_G0 == rct::identity(), "test_G0 failed");
-    // #endif
+    #endif
     // sL, sR
     rct::keyV sL = rct::skvGen(m);
     rct::keyV sR(m);
     for(size_t i=0;i<m;i++) 
       if(cR[i] == rct::zero()) sR[i]= rct::zero();
       else sR[i] = rct::skGen();
-    std::cout<<"Creating sL,sR successful"<<std::endl;
 
     //Computing S: commitment to sL, sR
     rct::key rS = rct::skGen();
     rct::key S = cross_vector_exponent(0, Gw_p3, 0, H_p3, 0, sL, 0,sR, 0, NULL, &F_p3, &rS);
-    std::cout<<"Creating S successful"<<std::endl;
 
     //get y,z
     rct::key y = hash_cache_mash(hashcache, S);
     rct::key z = hashcache = hash_cache_mash(hashcache, S, y);
     rct::key zsq;
-    std::cout<<"Creating y,z successful"<<std::endl;
-    std::cout<<"y: "<<y<<std::endl;
-    std::cout<<"z: "<<z<<std::endl;
 
     sc_mul(zsq.bytes, z.bytes,z.bytes);
     if(y==rct::zero() || z==rct::zero()) goto try_again;
     
     // Constraints
     constraints constraint_vec(s, n, y, z, u, vS);
-    std::cout<<"Creating constraints successful"<<std::endl;
     
     //Constructing the polynomial l,r,t
     rct::keyV l0 = vector_add(cL, constraint_vec.alpha_vec);
@@ -756,7 +718,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     rct::key t1;
     sc_add(t1.bytes, t1_1.bytes, t1_2.bytes);
     rct::key t2 = inner_product(l1, r1);      
-    std::cout<<"Creating l,r,t successful"<<std::endl;
 
     //Commitments to t1,t2
     rct::key tau1 = rct::skGen(), tau2 = rct::skGen();
@@ -770,7 +731,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     sc_mul(tmp2.bytes, tau2.bytes, rct::INV_EIGHT.bytes);
     ge_double_scalarmult_base_vartime_p3(&p3, tmp.bytes, &ge_p3_H, tmp2.bytes);
     ge_p3_tobytes(T2.bytes, &p3);
-    std::cout<<"Creating T1,T2 successful"<<std::endl;
 
     //computing tau, r
     rct::key x = hash_cache_mash(hashcache, z, T1, T2);
@@ -783,18 +743,14 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     sc_muladd(taux.bytes, gamma.bytes, zsq.bytes, taux.bytes);
     rct::key r;
     sc_muladd(r.bytes, rS.bytes, x.bytes, rA.bytes);
-    std::cout<<"Creating taux,r successful"<<std::endl;
-    std::cout<<"x: "<<x<<std::endl;
     //evaluating l(x), r(x)
     rct::keyV l_x = l0;
     l_x = vector_add(l_x, vector_scalar(l1,x));
     rct::keyV r_x = r0;
     r_x = vector_add(r_x, vector_scalar(r1,x));
-    std::cout<<"Creating l(x),r(x) successful"<<std::endl;
 
     //computing t_hat
     rct::key t_hat = inner_product(l_x, r_x);
-    std::cout<<"Creating t_hat successful"<<std::endl;
     rct::key test_t;
     const rct::key t0 = inner_product(l0, r0);
     sc_muladd(test_t.bytes, t1.bytes, x.bytes, t0.bytes);
@@ -804,8 +760,6 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     //inner product argument
     rct::key x_ip = hash_cache_mash(hashcache, x, taux, r, t_hat);
     if (x_ip == rct::zero()) goto try_again;
-    std::cout<<"Creating x_ip successful"<<std::endl;
-    std::cout<<"x_ip: "<<x_ip<<std::endl;
 
     // These are used in the inner product rounds
     size_t nprime = 1ul<<logm;
@@ -944,28 +898,21 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   sc_mul(usq.bytes, u.bytes, u.bytes);
   sc_sub(minus_usq.bytes, rct::zero().bytes, usq.bytes);
   auto vS = vector_powers(v,s);
-  std::cout<<"u: "<<u<<std::endl;
-  std::cout<<"v: "<<v<<std::endl;
   
   rct::key w_G = hashcache= hash_cache_mash(hashcache, proof.A);
   CHECK_AND_ASSERT_MES(!(w_G == rct::zero()), false, "w_G == 0");
-  std::cout<<"w_G: "<<w_G<<std::endl;
 
   rct::key y = hash_cache_mash(hashcache, proof.S);
   CHECK_AND_ASSERT_MES(!(y == rct::zero()), false, "y == 0");
-  std::cout<<"y: "<<y<<std::endl;
 
   rct::key z = hashcache = hash_cache_mash(hashcache, proof.S, y);
   CHECK_AND_ASSERT_MES(!(z == rct::zero()), false, "z == 0");
-  std::cout<<"z: "<<z<<std::endl;
   
   rct::key x = hash_cache_mash(hashcache, z, proof.T1, proof.T2);
   CHECK_AND_ASSERT_MES(!(x == rct::zero()), false, "x == 0");
-  std::cout<<"x: "<<x<<std::endl;
 
   rct::key x_ip = hash_cache_mash(hashcache, x, proof.taux, proof.r, proof.t_hat);
   CHECK_AND_ASSERT_MES(!(x_ip == rct::zero()), false, "x_ip == 0");
-  std::cout<<"x_ip: "<<x_ip<<std::endl;
 
   rct::keyV w(length);
   for (size_t i = 0; i < length; ++i)
@@ -1012,7 +959,6 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   }
   std::copy(G_prime_p3.begin(), G_prime_p3.end(), std::back_inserter(Gw_p3));
   
-  std::cout<<"Creating Gw successful"<<std::endl;
   std::vector<rct::MultiexpData> multiexp_data;
   multiexp_data.reserve(2*m + 2*length + 8);
   
@@ -1043,7 +989,6 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
     multiexp_data.emplace_back(g_scalar, Gw_p3[i]);
     multiexp_data.emplace_back(h_scalar, H_p3[i]);
   }
-  std::cout<<"Creating G_vec,H_vec successful"<<std::endl;
 
   // // Lj^{wj^2} Rj^{wj^-2}
   ge_p3 proof8_L, proof8_R;
@@ -1057,7 +1002,6 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
     sc_mul(tmp.bytes, winv[i].bytes, winv[i].bytes);
     multiexp_data.emplace_back(tmp, proof8_R);
   }
-  std::cout<<"Creating L,R successful"<<std::endl;
 
   rct::key y0 = rct::zero(), y1 = rct::zero(), y2 = rct::zero(), y3=rct::zero();
   // g^{x_ip(t_hat - ab) - c.taux} Note that U = G^x_ip
@@ -1071,7 +1015,6 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   // // F^-r
   sc_sub(y1.bytes, rct::zero().bytes, proof.r.bytes);
   multiexp_data.emplace_back(y1, F_p3);
-  std::cout<<"Creating F successful"<<std::endl;
 
   // // S^x
   ge_p3 proof8_T1;
@@ -1086,32 +1029,27 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   rct::scalarmult8(proof8_Cres, proof.C_res);
 
   multiexp_data.emplace_back(x, proof8_S);
-  std::cout<<"Creating S successful"<<std::endl;
 
   // // H^{c(delta-t_hat)}
   sc_sub(y2.bytes, constraint_vec.delta.bytes, proof.t_hat.bytes);
   sc_mul(y2.bytes, y2.bytes, weight.bytes);
   multiexp_data.emplace_back(y2, rct::H);
-  std::cout<<"Creating H successful"<<std::endl;
 
   // // T1^cx
   sc_mul(y2.bytes, x.bytes, weight.bytes);
   multiexp_data.emplace_back(y2, proof8_T1);
-  std::cout<<"Creating T1 successful"<<std::endl;
   
   // // T2^{cx^2}
   rct::key xsq;
   sc_mul(xsq.bytes, x.bytes, x.bytes);
   sc_mul(xsq.bytes, xsq.bytes, weight.bytes);
   multiexp_data.emplace_back(xsq, proof8_T2);
-  std::cout<<"Creating T2 successful"<<std::endl;
 
   // C_res^{cz^2}
   rct::key zsq;
   sc_mul(zsq.bytes, z.bytes,z.bytes);
   sc_mul(y3.bytes, zsq.bytes, weight.bytes);
   multiexp_data.emplace_back(y3, proof8_Cres);
-  std::cout<<"Creating Cres successful"<<std::endl;
 
   multiexp_data.emplace_back(rct::identity(), proof8_A);
 
