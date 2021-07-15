@@ -388,7 +388,7 @@ struct constraints {
   rct::key delta;
   rct::key kappa;
 
-  constraints(size_t s, size_t n, rct::key y, rct::key z, rct::key u, rct::key v) {
+  constraints(size_t s, size_t n, rct::key &y, rct::key &z, rct::key &u, rct::keyV &vS) {
     size_t beta = 64;
     size_t sn  = s*n;
     size_t m = 2+3*s+beta+n+sn;
@@ -399,7 +399,6 @@ struct constraints {
 
     rct::key tmp;
     auto yN = vector_powers(y, sn+beta);
-    auto vS = vector_powers(v, s);
     auto uvS = vector_scalar(vS,u);
     auto z9 = vector_powers(z, 9);
     const rct::keyV twoN = vector_powers(TWO, beta);
@@ -578,25 +577,33 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   std::cout<<"u: "<<u<<std::endl;
   std::cout<<"v: "<<v<<std::endl;
   
+  //Bases
+  std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
+  std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
+  std::vector<ge_p3> H_p3(Hi_p3.begin(), Hi_p3.end());
+  std::cout<<"Creating bases successful"<<std::endl;
 
+
+  // Secret vectors
+  //cL = [xi, eta, e_hat, x_inv, E_mat, b, a, r]
+  //cR = [0^{2+n}, x, 1-E_mat, 1-b, 0^2s]
+  rct::keyV cL(m, rct::zero()), cR(m, rct::zero());
   // Computing b
-  rct::keyV b_vec(beta);
-  rct::keyV b_vec_comp(beta);
   for (size_t i = beta; i-- > 0;)
   {
     if (a_res & (((uint64_t)1)<<i)) {
-      b_vec[i] = rct::identity();
-      b_vec_comp[i] = rct::zero();
+      cL[2+n+s+sn+i] = rct::identity();
+      cR[2+n+s+sn+i] = rct::zero();
     }
     else {
-      b_vec_comp[i] = rct::identity();
-      b_vec[i] = rct::zero();
+      cR[2+n+s+sn+i] = rct::identity();
+      cL[2+n+s+sn+i] = rct::zero();
     }
   }
 
   uint64_t test_a = 0;
   for(size_t i=0; i<beta; i++) {
-    if(b_vec[i]==rct::identity()) {
+    if(cL[2+n+s+sn+i]==rct::identity()) {
       test_a += ((uint64_t)1)<<i;
     }
   }
@@ -605,80 +612,51 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   CHECK_AND_ASSERT_THROW_MES(test_a == a_res, "test_aL failed");
   std::cout<<"Creating b successful"<<std::endl;
 
-  //Bases
-  std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
-  std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
-  std::vector<ge_p3> H_p3(Hi_p3.begin(), Hi_p3.end());
-  std::cout<<"Creating bases successful"<<std::endl;
-
   // Computing C_res, ehat, vec(E), I_vec
   rct::key tmp, tmp2;
-  rct::keyV ehat(n);
-  rct::keyV E_mat(sn), E_mat_comp(sn);
   rct::keyV I_vec(s);
   rct::key gamma8;
   sc_mul(gamma8.bytes, gamma.bytes, rct::INV_EIGHT.bytes);
   rct::key C_res = rct::commit(a_res, gamma8);
-  // sc_mul(C_res.bytes, gamma.bytes, rct::G.bytes);
-  //  = rct::scalarmultBase(gamma);
   size_t index=0;
   for(size_t i=0;i<n;i++) {
     if(sc_isnonzero(E_vec[i].bytes) == 1) {
-      E_mat[n*index+i] = rct::identity();
-      ehat[i] = vS[index];
-      // sc_mul(C_res.bytes, C_res.bytes, C_vec[i].bytes);
-      // sc_add(gamma.bytes, gamma.bytes, r_vec[index].bytes);
+      cL[2+n+s+n*index+i] = rct::identity();
+      cL[2+i] = vS[index];
       sc_mul(tmp.bytes, x_vec[index].bytes, rct::INV_EIGHT.bytes);
       I_vec[index] = rct::scalarmultKey(H_vec[i],  tmp);
       index = index+1;
     } 
-    else E_mat_comp[n*index+i] = rct::identity();
+    else cR[2+n+s+n*index+i] = rct::identity();
   }
   std::cout<<"Creating C_res, ehat, vec(E), I_vec successful"<<std::endl;
   
   // computing xi
-  rct::keyV a_vec_key;
-  a_vec_key.reserve(s);
-  std::cout<<"Creating a_vec_key successful"<<std::endl;
-  for(size_t i=0; i<s;i++) a_vec_key.push_back(rct::d2h(a_vec[i]));
+  for(size_t i=0; i<s;i++) cL[2+n+s+sn+beta+i] = rct::d2h(a_vec[i]);
   std::cout<<"Creating a_vec_key successful"<<std::endl;
 
-  rct::key xi = inner_product(vS, a_vec_key);
-  sc_mul(xi.bytes, xi.bytes, minus_u.bytes);
+  for (size_t i = 0; i < s; ++i)
+  {
+    sc_muladd(cL[0].bytes, vS[i].bytes, cL[2+n+s+sn+beta+i].bytes, cL[0].bytes);
+  }
+  sc_mul(cL[0].bytes, cL[0].bytes, minus_u.bytes);
   std::cout<<"Creating xi successful"<<std::endl;
   
   //computing eta
-  rct::key eta;
-  sc_mul(eta.bytes, inner_product(vS, r_vec).bytes, minus_u.bytes);
-  sc_sub(eta.bytes, eta.bytes, inner_product(vS, x_vec).bytes);
+  sc_mul(cL[1].bytes, inner_product(vS, r_vec).bytes, minus_u.bytes);
+  sc_sub(cL[1].bytes, cL[1].bytes, inner_product(vS, x_vec).bytes);
   std::cout<<"Creating eta successful"<<std::endl;
   
   // computing inverse of x
   rct::keyV x_inv = invert(x_vec);
   std::cout<<"Creating x_inv successful"<<std::endl;
 
-  // Secret vectors
-  //cL = [xi, eta, e_hat, x_inv, E_mat, b, a, r]
-  rct::keyV cL;
-  cL.reserve(m);
-  cL.emplace_back(xi);  
-  cL.emplace_back(eta);  
-  std::copy(ehat.begin(), ehat.end(), std::back_inserter(cL));
-  std::copy(x_inv.begin(), x_inv.end(), std::back_inserter(cL));
-  std::copy(E_mat.begin(), E_mat.end(), std::back_inserter(cL));
-  std::copy(b_vec.begin(), b_vec.end(), std::back_inserter(cL));
-  for(auto i: a_vec_key) cL.push_back(i);
-  std::copy(r_vec.begin(), r_vec.end(), std::back_inserter(cL));
-  std::fill_n(std::back_inserter(cL),m-cL.size(),rct::zero());
+  for(size_t i=0; i<s; i++) {
+    cL[2+n+i] = x_inv[i];
+    cR[2+n+i] = x_vec[i];
+    cL[2+n+s+sn+beta+s+i] = r_vec[i];
+  }
   std::cout<<"Creating cL successful "<<cL.size()<<std::endl;
-
-  //cR = [0^{2+n}, x, 1-E_mat, 1-b, 0^2s]
-  rct::keyV cR(2+n, rct::zero());
-  cR.reserve(m);
-  std::copy(x_vec.begin(), x_vec.end(), std::back_inserter(cR));
-  std::copy(E_mat_comp.begin(), E_mat_comp.end(), std::back_inserter(cR));
-  std::copy(b_vec_comp.begin(), b_vec_comp.end(), std::back_inserter(cR));
-  std::fill_n(std::back_inserter(cR),m-cR.size(),rct::zero());
   std::cout<<"Creating cR successful "<<cR.size()<<std::endl;
 
   //Computing G0
@@ -763,7 +741,7 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
     if(y==rct::zero() || z==rct::zero()) goto try_again;
     
     // Constraints
-    constraints constraint_vec(s, n, y, z, u, v);
+    constraints constraint_vec(s, n, y, z, u, vS);
     std::cout<<"Creating constraints successful"<<std::endl;
     
     //Constructing the polynomial l,r,t
@@ -995,7 +973,7 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   rct::keyV winv = invert(w);
   
   // //Getting constraints vector
-  constraints constraint_vec(s, n, y, z, u, v);
+  constraints constraint_vec(s, n, y, z, u, vS);
 
   // Computing Gw
   rct::key uw, usqw, minus_usqw;
