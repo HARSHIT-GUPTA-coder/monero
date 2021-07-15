@@ -562,108 +562,109 @@ MProvePlus MoneroExchange::GenerateProofOfAssets()
   m = (1ul<<logm);
   std::cout<<"expected size = "<<m<<std::endl;
   init_exponents(1ul<<logm);
-  
-  // u,v
-  rct::key hashcache = rct::skGen();
-  auto u = hash_cache_mash(hashcache, rct::hash_to_scalar(Gi));;
-  auto v = hashcache = hash_cache_mash(hashcache, rct::hash_to_scalar(Hi));
-  rct::key usq, minus_u, minus_usq;
-  auto vS = vector_powers(v,s);
-  sc_mul(usq.bytes, u.bytes, u.bytes);
-  sc_sub(minus_u.bytes, rct::zero().bytes, u.bytes);
-  sc_sub(minus_usq.bytes, rct::zero().bytes, usq.bytes);
 
-  std::cout<<"Creating u,v successful"<<std::endl;
-  std::cout<<"u: "<<u<<std::endl;
-  std::cout<<"v: "<<v<<std::endl;
-  
-  //Bases
-  std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
-  std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
-  std::vector<ge_p3> H_p3(Hi_p3.begin(), Hi_p3.end());
-  std::cout<<"Creating bases successful"<<std::endl;
-
-
-  // Secret vectors
-  //cL = [xi, eta, e_hat, x_inv, E_mat, b, a, r]
-  //cR = [0^{2+n}, x, 1-E_mat, 1-b, 0^2s]
-  rct::keyV cL(m, rct::zero()), cR(m, rct::zero());
-  // Computing b
-  for (size_t i = beta; i-- > 0;)
-  {
-    if (a_res & (((uint64_t)1)<<i)) {
-      cL[2+n+s+sn+i] = rct::identity();
-      cR[2+n+s+sn+i] = rct::zero();
-    }
-    else {
-      cR[2+n+s+sn+i] = rct::identity();
-      cL[2+n+s+sn+i] = rct::zero();
-    }
-  }
-
-  uint64_t test_a = 0;
-  for(size_t i=0; i<beta; i++) {
-    if(cL[2+n+s+sn+i]==rct::identity()) {
-      test_a += ((uint64_t)1)<<i;
-    }
-  }
-
-  std::cout<<beta<<' '<<test_a<<' '<<a_res<<std::endl;
-  CHECK_AND_ASSERT_THROW_MES(test_a == a_res, "test_aL failed");
-  std::cout<<"Creating b successful"<<std::endl;
-
-  // Computing C_res, ehat, vec(E), I_vec
-  rct::key tmp, tmp2;
-  rct::keyV I_vec(s);
-  rct::key gamma8;
-  sc_mul(gamma8.bytes, gamma.bytes, rct::INV_EIGHT.bytes);
-  rct::key C_res = rct::commit(a_res, gamma8);
-  size_t index=0;
-  for(size_t i=0;i<n;i++) {
-    if(sc_isnonzero(E_vec[i].bytes) == 1) {
-      cL[2+n+s+n*index+i] = rct::identity();
-      cL[2+i] = vS[index];
-      sc_mul(tmp.bytes, x_vec[index].bytes, rct::INV_EIGHT.bytes);
-      I_vec[index] = rct::scalarmultKey(H_vec[i],  tmp);
-      index = index+1;
-    } 
-    else cR[2+n+s+n*index+i] = rct::identity();
-  }
-  std::cout<<"Creating C_res, ehat, vec(E), I_vec successful"<<std::endl;
-  
-  // computing xi
-  for(size_t i=0; i<s;i++) cL[2+n+s+sn+beta+i] = rct::d2h(a_vec[i]);
-  std::cout<<"Creating a_vec_key successful"<<std::endl;
-
-  for (size_t i = 0; i < s; ++i)
-  {
-    sc_muladd(cL[0].bytes, vS[i].bytes, cL[2+n+s+sn+beta+i].bytes, cL[0].bytes);
-  }
-  sc_mul(cL[0].bytes, cL[0].bytes, minus_u.bytes);
-  std::cout<<"Creating xi successful"<<std::endl;
-  
-  //computing eta
-  sc_mul(cL[1].bytes, inner_product(vS, r_vec).bytes, minus_u.bytes);
-  sc_sub(cL[1].bytes, cL[1].bytes, inner_product(vS, x_vec).bytes);
-  std::cout<<"Creating eta successful"<<std::endl;
-  
-  // computing inverse of x
-  rct::keyV x_inv = invert(x_vec);
-  std::cout<<"Creating x_inv successful"<<std::endl;
-
-  for(size_t i=0; i<s; i++) {
-    cL[2+n+i] = x_inv[i];
-    cR[2+n+i] = x_vec[i];
-    cL[2+n+s+sn+beta+s+i] = r_vec[i];
-  }
-  std::cout<<"Creating cL successful "<<cL.size()<<std::endl;
-  std::cout<<"Creating cR successful "<<cR.size()<<std::endl;
-
-  //Computing G0
-  std::vector<ge_p3> G0_p3(m);  std::copy_n(Gi_p3.begin(), m, G0_p3.begin());
-  std::cout<<"Creating G0 successful"<<std::endl;
-  
   try_again:
+    // u,v
+    rct::key hashcache = rct::skGen();
+    auto u = hash_cache_mash(hashcache, rct::hash_to_scalar(Gi));;
+    auto v = hashcache = hash_cache_mash(hashcache, rct::hash_to_scalar(Hi));
+    if(u==rct::zero() || v==rct::zero()) goto try_again;
+    rct::key usq, minus_u, minus_usq;
+    auto vS = vector_powers(v,s);
+    sc_mul(usq.bytes, u.bytes, u.bytes);
+    sc_sub(minus_u.bytes, rct::zero().bytes, u.bytes);
+    sc_sub(minus_usq.bytes, rct::zero().bytes, usq.bytes);
+
+    std::cout<<"Creating u,v successful"<<std::endl;
+    std::cout<<"u: "<<u<<std::endl;
+    std::cout<<"v: "<<v<<std::endl;
+    
+    //Bases
+    std::vector<ge_p3> Q_p3(Gi_p3.begin(), Gi_p3.begin()+2+n+s);
+    std::vector<ge_p3> G_prime_p3(Gi_p3.begin()+2+n+s, Gi_p3.begin()+m);
+    std::vector<ge_p3> H_p3(Hi_p3.begin(), Hi_p3.end());
+    std::cout<<"Creating bases successful"<<std::endl;
+
+
+    // Secret vectors
+    //cL = [xi, eta, e_hat, x_inv, E_mat, b, a, r]
+    //cR = [0^{2+n}, x, 1-E_mat, 1-b, 0^2s]
+    rct::keyV cL(m, rct::zero()), cR(m, rct::zero());
+    // Computing b
+    for (size_t i = beta; i-- > 0;)
+    {
+      if (a_res & (((uint64_t)1)<<i)) {
+        cL[2+n+s+sn+i] = rct::identity();
+        cR[2+n+s+sn+i] = rct::zero();
+      }
+      else {
+        cR[2+n+s+sn+i] = rct::identity();
+        cL[2+n+s+sn+i] = rct::zero();
+      }
+    }
+
+    uint64_t test_a = 0;
+    for(size_t i=0; i<beta; i++) {
+      if(cL[2+n+s+sn+i]==rct::identity()) {
+        test_a += ((uint64_t)1)<<i;
+      }
+    }
+
+    std::cout<<beta<<' '<<test_a<<' '<<a_res<<std::endl;
+    CHECK_AND_ASSERT_THROW_MES(test_a == a_res, "test_aL failed");
+    std::cout<<"Creating b successful"<<std::endl;
+
+    // Computing C_res, ehat, vec(E), I_vec
+    rct::key tmp, tmp2;
+    rct::keyV I_vec(s);
+    rct::key gamma8;
+    sc_mul(gamma8.bytes, gamma.bytes, rct::INV_EIGHT.bytes);
+    rct::key C_res = rct::commit(a_res, gamma8);
+    size_t index=0;
+    for(size_t i=0;i<n;i++) {
+      if(sc_isnonzero(E_vec[i].bytes) == 1) {
+        cL[2+n+s+n*index+i] = rct::identity();
+        cL[2+i] = vS[index];
+        sc_mul(tmp.bytes, x_vec[index].bytes, rct::INV_EIGHT.bytes);
+        I_vec[index] = rct::scalarmultKey(H_vec[i],  tmp);
+        index = index+1;
+      } 
+      else cR[2+n+s+n*index+i] = rct::identity();
+    }
+    std::cout<<"Creating C_res, ehat, vec(E), I_vec successful"<<std::endl;
+    
+    // computing xi
+    for(size_t i=0; i<s;i++) cL[2+n+s+sn+beta+i] = rct::d2h(a_vec[i]);
+    std::cout<<"Creating a_vec_key successful"<<std::endl;
+
+    for (size_t i = 0; i < s; ++i)
+    {
+      sc_muladd(cL[0].bytes, vS[i].bytes, cL[2+n+s+sn+beta+i].bytes, cL[0].bytes);
+    }
+    sc_mul(cL[0].bytes, cL[0].bytes, minus_u.bytes);
+    std::cout<<"Creating xi successful"<<std::endl;
+    
+    //computing eta
+    sc_mul(cL[1].bytes, inner_product(vS, r_vec).bytes, minus_u.bytes);
+    sc_sub(cL[1].bytes, cL[1].bytes, inner_product(vS, x_vec).bytes);
+    std::cout<<"Creating eta successful"<<std::endl;
+    
+    // computing inverse of x
+    rct::keyV x_inv = invert(x_vec);
+    std::cout<<"Creating x_inv successful"<<std::endl;
+
+    for(size_t i=0; i<s; i++) {
+      cL[2+n+i] = x_inv[i];
+      cR[2+n+i] = x_vec[i];
+      cL[2+n+s+sn+beta+s+i] = r_vec[i];
+    }
+    std::cout<<"Creating cL successful "<<cL.size()<<std::endl;
+    std::cout<<"Creating cR successful "<<cR.size()<<std::endl;
+
+    //Computing G0
+    std::vector<ge_p3> G0_p3(m);  std::copy_n(Gi_p3.begin(), m, G0_p3.begin());
+    std::cout<<"Creating G0 successful"<<std::endl;
+  
     //Computing A
     rct::key rA = rct::skGen();
     rct::key A = cross_vector_exponent(m,G0_p3,0,H_p3,0,cL,0,cR,0,NULL,&F_p3,&rA);
@@ -935,7 +936,9 @@ bool MProveProofPublicVerification(MProvePlus proof, rct::keyV C_vec, rct::keyV 
   //Reconstructing challenges
   rct::key hashcache;
   auto u = proof.u;
+  CHECK_AND_ASSERT_MES(!(u == rct::zero()), false, "u == 0");
   auto v = hashcache = proof.v;
+  CHECK_AND_ASSERT_MES(!(v == rct::zero()), false, "v == 0");
   
   rct::key usq, minus_usq;
   sc_mul(usq.bytes, u.bytes, u.bytes);

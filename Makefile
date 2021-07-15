@@ -54,8 +54,8 @@ cmake-debug:
 	mkdir -p $(builddir)/debug
 	cd $(builddir)/debug && cmake -D CMAKE_BUILD_TYPE=Debug $(topdir)
 
-debug: cmake-debug
-	cd $(builddir)/debug && $(MAKE)
+debug: 
+	cd $(builddir)/debug && $(MAKE) mprove-tests
 
 # Temporarily disable some tests:
 #  * libwallet_api_tests fail (Issue #895)

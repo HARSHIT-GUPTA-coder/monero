@@ -1,0 +1,5 @@
+In file included from /mnt/d/projects/crypto and blockchain/original/monero/tests/mprove/main.cpp:1:
+/mnt/d/projects/crypto and blockchain/original/monero/tests/mprove/mprove.h: In constructor ‘constraints::constraints(size_t, size_t, rct::key&, rct::key&, rct::key&, rct::keyV&)’:
+/mnt/d/projects/crypto and blockchain/original/monero/tests/mprove/mprove.h:402:10: warning: variable ‘v’ set but not used [-Wunused-but-set-variable]
+  402 |     auto v = vS[1];
+      |          ^
